@@ -180,10 +180,13 @@ export default function RecordList() {
                 >
                   <div className="flex items-center justify-between gap-2">
                     <span className="font-semibold text-gray-900 text-sm">{r.tractor?.name}</span>
-                    <Badge color="green">{formatDuration(r.started_at, r.ended_at)}</Badge>
+                    {r.ended_at
+                      ? <Badge color="green">{formatDuration(r.started_at, r.ended_at)}</Badge>
+                      : <Badge color="yellow">⏳ En cours</Badge>
+                    }
                   </div>
                   <div className="text-xs text-gray-500">
-                    {formatDateTime(r.started_at)} → {formatDateTime(r.ended_at)}
+                    {formatDateTime(r.started_at)} → {r.ended_at ? formatDateTime(r.ended_at) : <span className="text-amber-600 font-medium">En cours</span>}
                   </div>
                   <div className="flex flex-wrap gap-1">
                     {r.work_record_tools?.map((wrt, i) => (
@@ -217,9 +220,12 @@ export default function RecordList() {
                   {records.map(r => (
                     <tr key={r.id} className="hover:bg-gray-50 transition-colors">
                       <Td>{formatDateTime(r.started_at)}</Td>
-                      <Td>{formatDateTime(r.ended_at)}</Td>
+                      <Td>{r.ended_at ? formatDateTime(r.ended_at) : <Badge color="yellow">⏳ En cours</Badge>}</Td>
                       <Td>
-                        <Badge color="green">{formatDuration(r.started_at, r.ended_at)}</Badge>
+                        {r.ended_at
+                          ? <Badge color="green">{formatDuration(r.started_at, r.ended_at)}</Badge>
+                          : <span className="text-gray-300">—</span>
+                        }
                       </Td>
                       <Td className="font-medium">{r.tractor?.name}</Td>
                       <Td>

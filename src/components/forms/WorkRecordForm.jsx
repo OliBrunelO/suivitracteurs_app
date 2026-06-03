@@ -46,7 +46,6 @@ export function WorkRecordForm({ initialData, onSubmit, onCancel, loading }) {
   function validate() {
     const errs = {}
     if (!form.started_at) errs.started_at = 'Requis'
-    if (!form.ended_at)   errs.ended_at   = 'Requis'
     if (form.started_at && form.ended_at && new Date(form.ended_at) <= new Date(form.started_at))
       errs.ended_at = 'La date de fin doit être après la date de début'
     if (!form.tractor_id) errs.tractor_id = 'Requis'
@@ -62,10 +61,10 @@ export function WorkRecordForm({ initialData, onSubmit, onCancel, loading }) {
     onSubmit(
       {
         ...form,
-        driver_id: isAdmin ? form.driver_id : profile.id,
+        driver_id:  isAdmin ? form.driver_id : profile.id,
         created_by: profile.id,
         started_at: new Date(form.started_at).toISOString(),
-        ended_at:   new Date(form.ended_at).toISOString(),
+        ended_at:   form.ended_at ? new Date(form.ended_at).toISOString() : null,
       },
       toolIds
     )
@@ -91,13 +90,20 @@ export function WorkRecordForm({ initialData, onSubmit, onCancel, loading }) {
           onChange={e => set('started_at', e.target.value)}
           error={errors.started_at}
         />
-        <Input
-          label="Date et heure de fin *"
-          type="datetime-local"
-          value={form.ended_at}
-          onChange={e => set('ended_at', e.target.value)}
-          error={errors.ended_at}
-        />
+        <div className="flex flex-col gap-1">
+          <Input
+            label="Date et heure de fin"
+            type="datetime-local"
+            value={form.ended_at}
+            onChange={e => set('ended_at', e.target.value)}
+            error={errors.ended_at}
+          />
+          {!form.ended_at && (
+            <p className="text-xs text-amber-600 flex items-center gap-1">
+              <span>⏳</span> Laisser vide = travail en cours
+            </p>
+          )}
+        </div>
       </div>
 
       <Select

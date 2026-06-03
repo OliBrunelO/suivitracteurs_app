@@ -108,7 +108,11 @@ export default function Dashboard() {
                     {r.tractor?.name} — {r.driver?.full_name}
                   </p>
                   <p className="text-xs text-gray-500">
-                    {formatDateTime(r.started_at)} · {formatDuration(r.started_at, r.ended_at)}
+                    {formatDateTime(r.started_at)}
+                    {r.ended_at
+                      ? ` · ${formatDuration(r.started_at, r.ended_at)}`
+                      : <span className="text-amber-500 ml-1">⏳ En cours</span>
+                    }
                   </p>
                 </div>
                 <div className="flex gap-1 flex-wrap justify-end">

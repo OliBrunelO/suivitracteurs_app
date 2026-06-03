@@ -106,9 +106,23 @@ export default function RecordDetail() {
           </div>
         ) : (
           <div className="bg-white rounded-xl border border-gray-200 shadow-sm divide-y divide-gray-100">
+            {!record.ended_at && (
+              <div className="px-5 py-3 bg-amber-50 border-b border-amber-100 flex items-center gap-2">
+                <span className="text-amber-600 text-sm font-medium">⏳ Travail en cours — date de fin non renseignée</span>
+              </div>
+            )}
             <DetailRow label="Début" value={formatDateTime(record.started_at)} />
-            <DetailRow label="Fin" value={formatDateTime(record.ended_at)} />
-            <DetailRow label="Durée" value={formatDuration(record.started_at, record.ended_at)} />
+            <DetailRow
+              label="Fin"
+              value={record.ended_at
+                ? formatDateTime(record.ended_at)
+                : <Badge color="yellow">En cours</Badge>
+              }
+            />
+            <DetailRow
+              label="Durée"
+              value={record.ended_at ? formatDuration(record.started_at, record.ended_at) : '—'}
+            />
             <DetailRow label="Tracteur" value={record.tractor?.name} />
             <DetailRow
               label="Outils"
