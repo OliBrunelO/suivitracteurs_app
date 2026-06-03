@@ -12,7 +12,7 @@ export function useTractors({ activeOnly = false } = {}) {
     if (activeOnly) query = query.eq('active', true)
     const { data, error } = await query
     if (error) setError(error.message)
-    else setTractors(data)
+    else setTractors(data || [])
     setLoading(false)
   }
 

@@ -18,8 +18,9 @@ export function useTools({ activeOnly = false } = {}) {
     // Si la table categories n'existe pas encore (migration non exécutée),
     // on retombe sur une requête sans jointure
     if (error) {
-      const fallback = await supabase.from('tools').select('*').order('name')
-        .then(r => r)
+      let fallbackQ = supabase.from('tools').select('*').order('name')
+      if (activeOnly) fallbackQ = fallbackQ.eq('active', true)
+      const fallback = await fallbackQ
       if (!fallback.error) {
         data = fallback.data
         error = null

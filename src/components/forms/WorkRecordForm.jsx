@@ -11,8 +11,8 @@ import { toLocalDatetimeValue } from '../../lib/utils'
 
 export function WorkRecordForm({ initialData, onSubmit, onCancel, loading }) {
   const { profile, isAdmin } = useAuth()
-  const { tractors } = useTractors({ activeOnly: true })
-  const { tools } = useTools({ activeOnly: true })
+  const { tractors, loading: loadingTractors, error: errorTractors } = useTractors({ activeOnly: true })
+  const { tools, loading: loadingTools, error: errorTools } = useTools({ activeOnly: true })
   const [drivers, setDrivers] = useState([])
 
   const [form, setForm] = useState({
@@ -79,6 +79,23 @@ export function WorkRecordForm({ initialData, onSubmit, onCancel, loading }) {
     label: t.name,
     group: t.category?.name ?? 'Sans catégorie',
   }))
+
+  const dataError = errorTractors || errorTools
+  if (dataError) {
+    return (
+      <div className="bg-red-50 border border-red-200 rounded-lg p-4 text-sm text-red-700">
+        <p className="font-semibold mb-1">Impossible de charger les données du formulaire</p>
+        <p className="text-xs font-mono">{dataError}</p>
+        <button
+          type="button"
+          className="mt-3 text-primary-600 underline text-xs"
+          onClick={() => window.location.reload()}
+        >
+          Recharger la page
+        </button>
+      </div>
+    )
+  }
 
   return (
     <form onSubmit={handleSubmit} className="flex flex-col gap-4">
