@@ -12,7 +12,7 @@ import { Badge } from '../../components/ui/Badge'
 import { Spinner } from '../../components/ui/Spinner'
 import { supabase } from '../../lib/supabase'
 import { exportToCSV } from '../../lib/exportCSV'
-import { formatDateTime, formatDuration, durationHours } from '../../lib/utils'
+import { formatDateTime, formatWorkedDuration, computeWorkedDurationMs, getWorkStatus } from '../../lib/utils'
 
 export default function RecordList() {
   const { profile, isAdmin } = useAuth()
@@ -49,7 +49,8 @@ export default function RecordList() {
         tractor:tractors(id, name),
         driver:profiles!work_records_driver_id_fkey(full_name),
         created_by_profile:profiles!work_records_created_by_fkey(full_name),
-        work_record_tools(tool:tools(name))
+        work_record_tools(tool:tools(name)),
+        work_record_pauses(paused_at, resumed_at)
       `)
       .order('started_at', { ascending: false })
 
@@ -85,8 +86,8 @@ export default function RecordList() {
 
     const rows = records.map(r => ({
       date_debut:     new Date(r.started_at).toLocaleString('fr-FR'),
-      date_fin:       new Date(r.ended_at).toLocaleString('fr-FR'),
-      duree_heures:   durationHours(r.started_at, r.ended_at),
+      date_fin:       r.ended_at ? new Date(r.ended_at).toLocaleString('fr-FR') : '',
+      duree_heures:   r.ended_at ? (computeWorkedDurationMs(r, r.work_record_pauses) / 3600000).toFixed(2) : '',
       tracteur:       r.tractor?.name ?? '',
       id_boitier_gps: deviceMap[r.id] ?? '',
       outils:         r.work_record_tools?.map(wrt => wrt.tool?.name).join(' | ') ?? '',
@@ -181,12 +182,19 @@ export default function RecordList() {
                   <div className="flex items-center justify-between gap-2">
                     <span className="font-semibold text-gray-900 text-sm">{r.tractor?.name}</span>
                     {r.ended_at
-                      ? <Badge color="green">{formatDuration(r.started_at, r.ended_at)}</Badge>
-                      : <Badge color="yellow">⏳ En cours</Badge>
+                      ? <Badge color="green">{formatWorkedDuration(r, r.work_record_pauses)}</Badge>
+                      : getWorkStatus(r, r.work_record_pauses) === 'en_pause'
+                        ? <Badge color="purple">⏸ En pause</Badge>
+                        : <Badge color="yellow">⏳ En cours</Badge>
                     }
                   </div>
                   <div className="text-xs text-gray-500">
-                    {formatDateTime(r.started_at)} → {r.ended_at ? formatDateTime(r.ended_at) : <span className="text-amber-600 font-medium">En cours</span>}
+                    {formatDateTime(r.started_at)} → {r.ended_at
+                      ? formatDateTime(r.ended_at)
+                      : getWorkStatus(r, r.work_record_pauses) === 'en_pause'
+                        ? <span className="text-purple-600 font-medium">En pause</span>
+                        : <span className="text-amber-600 font-medium">En cours</span>
+                    }
                   </div>
                   <div className="flex flex-wrap gap-1">
                     {r.work_record_tools?.map((wrt, i) => (
@@ -220,10 +228,17 @@ export default function RecordList() {
                   {records.map(r => (
                     <tr key={r.id} className="hover:bg-gray-50 transition-colors">
                       <Td>{formatDateTime(r.started_at)}</Td>
-                      <Td>{r.ended_at ? formatDateTime(r.ended_at) : <Badge color="yellow">⏳ En cours</Badge>}</Td>
                       <Td>
                         {r.ended_at
-                          ? <Badge color="green">{formatDuration(r.started_at, r.ended_at)}</Badge>
+                          ? formatDateTime(r.ended_at)
+                          : getWorkStatus(r, r.work_record_pauses) === 'en_pause'
+                            ? <Badge color="purple">⏸ En pause</Badge>
+                            : <Badge color="yellow">⏳ En cours</Badge>
+                        }
+                      </Td>
+                      <Td>
+                        {r.ended_at
+                          ? <Badge color="green">{formatWorkedDuration(r, r.work_record_pauses)}</Badge>
                           : <span className="text-gray-300">—</span>
                         }
                       </Td>

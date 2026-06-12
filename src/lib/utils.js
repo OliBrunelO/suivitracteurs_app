@@ -35,3 +35,58 @@ export function toLocalDatetimeValue(iso) {
   const pad = n => String(n).padStart(2, '0')
   return `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`
 }
+
+// 'terminé' | 'en_pause' | 'en_cours'
+export function getWorkStatus(record, pauses) {
+  if (record.ended_at) return 'terminé'
+  const sorted = [...(pauses || [])].sort((a, b) => new Date(a.paused_at) - new Date(b.paused_at))
+  if (sorted.length > 0 && !sorted[sorted.length - 1].resumed_at) return 'en_pause'
+  return 'en_cours'
+}
+
+// Durée travaillée en ms (hors pauses). Si en cours, compte jusqu'à maintenant.
+export function computeWorkedDurationMs(record, pauses) {
+  const sorted = [...(pauses || [])].sort((a, b) => new Date(a.paused_at) - new Date(b.paused_at))
+  let totalMs = 0
+  let segStart = new Date(record.started_at)
+
+  for (const pause of sorted) {
+    totalMs += new Date(pause.paused_at) - segStart
+    if (pause.resumed_at) {
+      segStart = new Date(pause.resumed_at)
+    } else {
+      return Math.max(0, totalMs) // actuellement en pause
+    }
+  }
+
+  const segEnd = record.ended_at ? new Date(record.ended_at) : new Date()
+  return Math.max(0, totalMs + (segEnd - segStart))
+}
+
+export function formatWorkedDuration(record, pauses) {
+  const ms = computeWorkedDurationMs(record, pauses)
+  if (ms <= 0) return '0 h 00'
+  const totalMin = Math.floor(ms / 60000)
+  const h = Math.floor(totalMin / 60)
+  const m = totalMin % 60
+  return `${h} h ${String(m).padStart(2, '0')}`
+}
+
+// Construit la liste chronologique des segments travail/pause
+export function buildWorkTimeline(record, pauses) {
+  const sorted = [...(pauses || [])].sort((a, b) => new Date(a.paused_at) - new Date(b.paused_at))
+  const segments = []
+  let currentStart = record.started_at
+
+  for (const pause of sorted) {
+    segments.push({ type: 'work', start: currentStart, end: pause.paused_at })
+    segments.push({ type: 'pause', start: pause.paused_at, end: pause.resumed_at })
+    currentStart = pause.resumed_at
+  }
+
+  if (currentStart) {
+    segments.push({ type: 'work', start: currentStart, end: record.ended_at })
+  }
+
+  return segments
+}

@@ -19,7 +19,8 @@ export function useWorkRecords(filters = {}) {
         tractor:tractors(id, name, gps_device_id),
         driver:profiles!work_records_driver_id_fkey(id, full_name, username),
         created_by_profile:profiles!work_records_created_by_fkey(id, full_name, username),
-        work_record_tools(tool_id, tool:tools(id, name))
+        work_record_tools(tool_id, tool:tools(id, name)),
+        work_record_pauses(id, paused_at, resumed_at)
       `, { count: 'exact' })
       .order('started_at', { ascending: false })
       .range((page - 1) * PAGE_SIZE, page * PAGE_SIZE - 1)
@@ -65,7 +66,7 @@ export function useWorkRecords(filters = {}) {
     return record
   }
 
-  async function updateRecord(id, values, toolIds) {
+  async function updateRecord(id, values, toolIds, pauses) {
     const { error } = await supabase.from('work_records').update(values).eq('id', id)
     if (error) throw error
 
@@ -77,6 +78,20 @@ export function useWorkRecords(filters = {}) {
         if (toolError) throw toolError
       }
     }
+
+    if (pauses !== undefined) {
+      await supabase.from('work_record_pauses').delete().eq('work_record_id', id)
+      const rows = pauses.filter(p => p.paused_at).map(p => ({
+        work_record_id: id,
+        paused_at: p.paused_at,
+        resumed_at: p.resumed_at || null,
+      }))
+      if (rows.length > 0) {
+        const { error: pauseError } = await supabase.from('work_record_pauses').insert(rows)
+        if (pauseError) throw pauseError
+      }
+    }
+
     await fetch()
   }
 
@@ -87,20 +102,58 @@ export function useWorkRecords(filters = {}) {
   }
 
   async function fetchOne(id) {
-    const { data, error } = await supabase
-      .from('work_records')
-      .select(`
-        *,
-        tractor:tractors(id, name, gps_device_id),
-        driver:profiles!work_records_driver_id_fkey(id, full_name, username),
-        created_by_profile:profiles!work_records_created_by_fkey(id, full_name, username),
-        work_record_tools(tool_id, tool:tools(id, name))
-      `)
-      .eq('id', id)
-      .single()
+    const [{ data, error }, { data: pauses }] = await Promise.all([
+      supabase
+        .from('work_records')
+        .select(`
+          *,
+          tractor:tractors(id, name, gps_device_id),
+          driver:profiles!work_records_driver_id_fkey(id, full_name, username),
+          created_by_profile:profiles!work_records_created_by_fkey(id, full_name, username),
+          work_record_tools(tool_id, tool:tools(id, name))
+        `)
+        .eq('id', id)
+        .single(),
+      supabase
+        .from('work_record_pauses')
+        .select('*')
+        .eq('work_record_id', id)
+        .order('paused_at'),
+    ])
     if (error) throw error
-    return data
+    return { ...data, pauses: pauses || [] }
   }
 
-  return { records, loading, error, total, pageSize: PAGE_SIZE, refetch: fetch, createRecord, updateRecord, deleteRecord, fetchOne }
+  async function pauseRecord(workRecordId) {
+    const { error } = await supabase.from('work_record_pauses').insert({
+      work_record_id: workRecordId,
+      paused_at: new Date().toISOString(),
+    })
+    if (error) throw error
+  }
+
+  async function resumeRecord(workRecordId) {
+    const { data, error: fetchError } = await supabase
+      .from('work_record_pauses')
+      .select('id')
+      .eq('work_record_id', workRecordId)
+      .is('resumed_at', null)
+      .order('paused_at', { ascending: false })
+      .limit(1)
+    if (fetchError) throw fetchError
+    if (!data?.length) throw new Error('Aucune pause active trouvée')
+
+    const { error } = await supabase
+      .from('work_record_pauses')
+      .update({ resumed_at: new Date().toISOString() })
+      .eq('id', data[0].id)
+    if (error) throw error
+  }
+
+  return {
+    records, loading, error, total, pageSize: PAGE_SIZE,
+    refetch: fetch,
+    createRecord, updateRecord, deleteRecord, fetchOne,
+    pauseRecord, resumeRecord,
+  }
 }

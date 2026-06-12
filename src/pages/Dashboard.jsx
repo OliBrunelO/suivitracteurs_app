@@ -7,41 +7,41 @@ import { Badge } from '../components/ui/Badge'
 import { Spinner } from '../components/ui/Spinner'
 import { supabase } from '../lib/supabase'
 import { formatDuration, formatDateTime } from '../lib/utils'
+import { WeeklyView } from '../components/WeeklyView'
+import { ToolStats } from '../components/ToolStats'
+
 
 export default function Dashboard() {
   const { profile, isAdmin, isSuperAdmin } = useAuth()
   const [recentRecords, setRecentRecords] = useState([])
   const [stats, setStats] = useState(null)
   const [loading, setLoading] = useState(true)
-
-  useEffect(() => {
-    loadData()
-  }, [profile])
+  useEffect(() => { loadData() }, [profile])
 
   async function loadData() {
     if (!profile) return
     setLoading(true)
 
-    let query = supabase
-      .from('work_records')
-      .select(`
-        *,
-        tractor:tractors(name),
-        driver:profiles!work_records_driver_id_fkey(full_name),
-        work_record_tools(tool:tools(name))
-      `)
-      .order('started_at', { ascending: false })
-      .limit(5)
+    const now = new Date()
+    const monthStart = new Date(now.getFullYear(), now.getMonth(), 1).toISOString()
 
-    const { data } = await query
+    const [{ data }, { count: total }, { count: thisMonth }] = await Promise.all([
+      supabase
+        .from('work_records')
+        .select(`
+          *,
+          tractor:tractors(name),
+          driver:profiles!work_records_driver_id_fkey(full_name),
+          work_record_tools(tool:tools(name))
+        `)
+        .order('started_at', { ascending: false })
+        .limit(5),
+      supabase.from('work_records').select('id', { count: 'exact', head: true }),
+      supabase.from('work_records').select('id', { count: 'exact', head: true }).gte('started_at', monthStart),
+    ])
+
     setRecentRecords(data || [])
-
-    // Statistiques simples
-    const { count } = await supabase
-      .from('work_records')
-      .select('id', { count: 'exact', head: true })
-
-    setStats({ total: count || 0 })
+    setStats({ total: total || 0, thisMonth: thisMonth || 0 })
     setLoading(false)
   }
 
@@ -52,31 +52,29 @@ export default function Dashboard() {
           <h1 className="text-2xl font-bold text-gray-900">Bonjour, {profile?.full_name} 👋</h1>
           <p className="text-sm text-gray-500 mt-0.5">Tableau de bord</p>
         </div>
-        <Button as={Link} to="/records/new">
-          + Nouveau travail
-        </Button>
+        <Button as={Link} to="/records/new">+ Nouveau travail</Button>
       </div>
 
       {/* Stats */}
       <div className="grid grid-cols-2 sm:grid-cols-3 gap-4 mb-8">
-        <StatCard
-          label="Total travaux"
-          value={stats?.total ?? '—'}
-          icon="📋"
-          loading={loading}
-        />
-        <StatCard
-          label="Ce mois-ci"
-          value="—"
-          icon="📅"
-          loading={loading}
-        />
+        <StatCard label="Total travaux" value={stats?.total ?? '—'} icon="📋" loading={loading} />
+        <StatCard label="Ce mois-ci" value={stats?.thisMonth ?? '—'} icon="📅" loading={loading} />
         <StatCard
           label="Mon rôle"
           value={profile?.role === 'superadmin' ? 'Super Admin' : profile?.role === 'admin' ? 'Admin' : 'Chauffeur'}
           icon="👤"
           loading={false}
         />
+      </div>
+
+      {/* Planning semaine */}
+      <div className="mb-8">
+        <WeeklyView />
+      </div>
+
+      {/* Durée par outil */}
+      <div className="mb-8">
+        <ToolStats />
       </div>
 
       {/* Derniers travaux */}
@@ -129,7 +127,7 @@ export default function Dashboard() {
         )}
       </div>
 
-      {/* Liens rapides admin et superadmin */}
+      {/* Liens rapides admin */}
       {isAdmin && (
         <div className="mt-6 grid grid-cols-2 gap-4">
           <Link to="/admin/config/tractors" className="bg-white border border-gray-200 rounded-xl p-4 hover:shadow-md transition-shadow flex items-center gap-3">

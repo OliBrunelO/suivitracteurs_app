@@ -25,7 +25,14 @@ export function WorkRecordForm({ initialData, onSubmit, onCancel, loading }) {
   const [toolIds, setToolIds] = useState(
     initialData?.work_record_tools?.map(wrt => wrt.tool_id) ?? []
   )
+  const [localPauses, setLocalPauses] = useState(
+    initialData?.pauses?.map(p => ({
+      paused_at:  toLocalDatetimeValue(p.paused_at),
+      resumed_at: toLocalDatetimeValue(p.resumed_at),
+    })) ?? []
+  )
   const [errors, setErrors] = useState({})
+  const [pauseErrors, setPauseErrors] = useState([])
 
   useEffect(() => {
     if (isAdmin) {
@@ -43,6 +50,21 @@ export function WorkRecordForm({ initialData, onSubmit, onCancel, loading }) {
     setErrors(e => ({ ...e, [field]: undefined }))
   }
 
+  function addPause() {
+    setLocalPauses(prev => [...prev, { paused_at: '', resumed_at: '' }])
+    setPauseErrors(prev => [...prev, {}])
+  }
+
+  function updatePause(index, field, value) {
+    setLocalPauses(prev => prev.map((p, i) => i === index ? { ...p, [field]: value } : p))
+    setPauseErrors(prev => prev.map((e, i) => i === index ? { ...e, [field]: undefined } : e))
+  }
+
+  function removePause(index) {
+    setLocalPauses(prev => prev.filter((_, i) => i !== index))
+    setPauseErrors(prev => prev.filter((_, i) => i !== index))
+  }
+
   function validate() {
     const errs = {}
     if (!form.started_at) errs.started_at = 'Requis'
@@ -54,10 +76,36 @@ export function WorkRecordForm({ initialData, onSubmit, onCancel, loading }) {
     return errs
   }
 
+  function validatePauses() {
+    const errs = localPauses.map(p => {
+      const e = {}
+      if (!p.paused_at) {
+        e.paused_at = 'Requis'
+      } else {
+        if (form.started_at && new Date(p.paused_at) <= new Date(form.started_at))
+          e.paused_at = 'Doit être après le début'
+        if (p.resumed_at && new Date(p.resumed_at) <= new Date(p.paused_at))
+          e.resumed_at = 'Reprise doit être après la pause'
+      }
+      return e
+    })
+    setPauseErrors(errs)
+    return errs.some(e => Object.keys(e).length > 0)
+  }
+
   function handleSubmit(e) {
     e.preventDefault()
     const errs = validate()
-    if (Object.keys(errs).length > 0) { setErrors(errs); return }
+    const hasPauseErrors = validatePauses()
+    if (Object.keys(errs).length > 0 || hasPauseErrors) { setErrors(errs); return }
+
+    const pausesData = localPauses
+      .filter(p => p.paused_at)
+      .map(p => ({
+        paused_at:  new Date(p.paused_at).toISOString(),
+        resumed_at: p.resumed_at ? new Date(p.resumed_at).toISOString() : null,
+      }))
+
     onSubmit(
       {
         ...form,
@@ -66,14 +114,14 @@ export function WorkRecordForm({ initialData, onSubmit, onCancel, loading }) {
         started_at: new Date(form.started_at).toISOString(),
         ended_at:   form.ended_at ? new Date(form.ended_at).toISOString() : null,
       },
-      toolIds
+      toolIds,
+      pausesData,
     )
   }
 
   const tractorOptions = tractors.map(t => ({ value: t.id, label: t.name }))
   const driverOptions  = drivers.map(d => ({ value: d.id, label: d.full_name }))
 
-  // Grouper les outils par catégorie pour le MultiSelect
   const toolOptions = tools.map(t => ({
     value: t.id,
     label: t.name,
@@ -162,6 +210,57 @@ export function WorkRecordForm({ initialData, onSubmit, onCancel, loading }) {
           placeholder="Observations, conditions, parcelle..."
         />
       </div>
+
+      {/* Pauses — admin uniquement, édition uniquement */}
+      {isAdmin && initialData && (
+        <div className="border-t border-gray-100 pt-4">
+          <div className="flex items-center justify-between mb-3">
+            <span className="text-sm font-medium text-gray-700">Pauses</span>
+            <button
+              type="button"
+              onClick={addPause}
+              className="text-xs text-primary-600 hover:underline"
+            >
+              + Ajouter une pause
+            </button>
+          </div>
+
+          {localPauses.length === 0 && (
+            <p className="text-xs text-gray-400 mb-2">Aucune pause enregistrée</p>
+          )}
+
+          {localPauses.map((pause, i) => (
+            <div key={i} className="grid grid-cols-2 gap-3 mb-3 items-start">
+              <Input
+                label={`Pause ${i + 1} — Mise en pause`}
+                type="datetime-local"
+                value={pause.paused_at}
+                onChange={e => updatePause(i, 'paused_at', e.target.value)}
+                error={pauseErrors[i]?.paused_at}
+              />
+              <div className="flex gap-1 items-end">
+                <div className="flex-1">
+                  <Input
+                    label="Reprise"
+                    type="datetime-local"
+                    value={pause.resumed_at}
+                    onChange={e => updatePause(i, 'resumed_at', e.target.value)}
+                    error={pauseErrors[i]?.resumed_at}
+                  />
+                </div>
+                <button
+                  type="button"
+                  onClick={() => removePause(i)}
+                  className="mb-0.5 p-1.5 text-red-400 hover:text-red-600 hover:bg-red-50 rounded transition-colors"
+                  title="Supprimer cette pause"
+                >
+                  ✕
+                </button>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
 
       <div className="flex justify-end gap-3 pt-2">
         {onCancel && (

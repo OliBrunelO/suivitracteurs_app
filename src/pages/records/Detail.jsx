@@ -8,13 +8,19 @@ import { Button } from '../../components/ui/Button'
 import { Badge } from '../../components/ui/Badge'
 import { Spinner } from '../../components/ui/Spinner'
 import { IconEdit, IconTrash, IconBtn } from '../../components/ui/Icons'
-import { formatDateTime, formatDuration } from '../../lib/utils'
+import { ConfirmModal } from '../../components/ui/ConfirmModal'
+import {
+  formatDateTime,
+  formatWorkedDuration,
+  getWorkStatus,
+  buildWorkTimeline,
+} from '../../lib/utils'
 import toast from 'react-hot-toast'
 
 export default function RecordDetail() {
   const { id } = useParams()
   const { profile, isAdmin } = useAuth()
-  const { fetchOne, updateRecord, deleteRecord } = useWorkRecords()
+  const { fetchOne, updateRecord, deleteRecord, pauseRecord, resumeRecord } = useWorkRecords()
   const navigate = useNavigate()
 
   const [record, setRecord] = useState(null)
@@ -22,6 +28,8 @@ export default function RecordDetail() {
   const [editing, setEditing] = useState(false)
   const [saving, setSaving] = useState(false)
   const [deleting, setDeleting] = useState(false)
+  const [pausing, setPausing] = useState(false)
+  const [confirm, setConfirm] = useState(null) // { title, message, onConfirm, label }
 
   useEffect(() => { load() }, [id])
 
@@ -38,10 +46,10 @@ export default function RecordDetail() {
     }
   }
 
-  async function handleUpdate(values, toolIds) {
+  async function handleUpdate(values, toolIds, pauses) {
     setSaving(true)
     try {
-      await updateRecord(id, values, toolIds)
+      await updateRecord(id, values, toolIds, pauses)
       toast.success('Modifications enregistrées')
       setEditing(false)
       await load()
@@ -52,23 +60,79 @@ export default function RecordDetail() {
     }
   }
 
-  async function handleDelete() {
-    if (!confirm('Supprimer cet enregistrement ? Cette action est irréversible.')) return
-    setDeleting(true)
+  function handleDelete() {
+    setConfirm({
+      title: 'Supprimer ce travail',
+      message: 'Cette action est irréversible. Toutes les données associées (pauses, outils) seront supprimées.',
+      label: 'Supprimer',
+      onConfirm: async () => {
+        setDeleting(true)
+        try {
+          await deleteRecord(id)
+          toast.success('Enregistrement supprimé')
+          navigate('/records')
+        } catch (err) {
+          toast.error(`Erreur : ${err.message}`)
+          setDeleting(false)
+        }
+      },
+    })
+  }
+
+  async function handlePause() {
+    setPausing(true)
     try {
-      await deleteRecord(id)
-      toast.success('Enregistrement supprimé')
-      navigate('/records')
+      await pauseRecord(id)
+      toast.success('Travail mis en pause')
+      await load()
     } catch (err) {
       toast.error(`Erreur : ${err.message}`)
-      setDeleting(false)
+    } finally {
+      setPausing(false)
     }
+  }
+
+  async function handleResume() {
+    setPausing(true)
+    try {
+      await resumeRecord(id)
+      toast.success('Travail repris')
+      await load()
+    } catch (err) {
+      toast.error(`Erreur : ${err.message}`)
+    } finally {
+      setPausing(false)
+    }
+  }
+
+  function handleEnd() {
+    setConfirm({
+      title: 'Clôturer ce travail',
+      message: `La date et heure de fin sera enregistrée maintenant (${new Date().toLocaleString('fr-FR', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' })}).`,
+      label: 'Clôturer',
+      onConfirm: async () => {
+        setPausing(true)
+        try {
+          await updateRecord(id, { ended_at: new Date().toISOString() }, undefined, undefined)
+          toast.success('Travail clôturé')
+          await load()
+        } catch (err) {
+          toast.error(`Erreur : ${err.message}`)
+        } finally {
+          setPausing(false)
+        }
+      },
+    })
   }
 
   if (loading) return <AppLayout><div className="flex justify-center py-20"><Spinner /></div></AppLayout>
   if (!record) return null
 
   const canEdit = isAdmin || record.driver_id === profile?.id
+  const pauses = record.pauses || []
+  const status = getWorkStatus(record, pauses)
+  const hasTimeline = pauses.length > 0
+  const timeline = hasTimeline ? buildWorkTimeline(record, pauses) : []
 
   return (
     <AppLayout>
@@ -106,23 +170,80 @@ export default function RecordDetail() {
           </div>
         ) : (
           <div className="bg-white rounded-xl border border-gray-200 shadow-sm divide-y divide-gray-100">
-            {!record.ended_at && (
-              <div className="px-5 py-3 bg-amber-50 border-b border-amber-100 flex items-center gap-2">
-                <span className="text-amber-600 text-sm font-medium">⏳ Travail en cours — date de fin non renseignée</span>
+            {/* Bannière de statut */}
+            {status === 'en_cours' && (
+              <div className="px-5 py-3 bg-amber-50 border-b border-amber-100 flex items-center justify-between gap-2">
+                <span className="text-amber-600 text-sm font-medium">⏳ Travail en cours</span>
+                {isAdmin && (
+                  <div className="flex gap-2">
+                    <Button size="sm" variant="secondary" onClick={handlePause} loading={pausing}>
+                      ⏸ Mettre en pause
+                    </Button>
+                    <Button size="sm" variant="danger" onClick={handleEnd} loading={pausing}>
+                      ⏹ Terminer
+                    </Button>
+                  </div>
+                )}
               </div>
             )}
+            {status === 'en_pause' && (
+              <div className="px-5 py-3 bg-purple-50 border-b border-purple-100 flex items-center justify-between gap-2">
+                <span className="text-purple-700 text-sm font-medium">⏸ Travail en pause</span>
+                {isAdmin && (
+                  <div className="flex gap-2">
+                    <Button size="sm" variant="secondary" onClick={handleResume} loading={pausing}>
+                      ▶ Reprendre
+                    </Button>
+                    <Button size="sm" variant="danger" onClick={handleEnd} loading={pausing}>
+                      ⏹ Terminer
+                    </Button>
+                  </div>
+                )}
+              </div>
+            )}
+
             <DetailRow label="Début" value={formatDateTime(record.started_at)} />
             <DetailRow
               label="Fin"
-              value={record.ended_at
-                ? formatDateTime(record.ended_at)
-                : <Badge color="yellow">En cours</Badge>
+              value={
+                record.ended_at
+                  ? formatDateTime(record.ended_at)
+                  : status === 'en_pause'
+                    ? <Badge color="purple">⏸ En pause</Badge>
+                    : <Badge color="yellow">⏳ En cours</Badge>
               }
             />
             <DetailRow
-              label="Durée"
-              value={record.ended_at ? formatDuration(record.started_at, record.ended_at) : '—'}
+              label={hasTimeline ? 'Durée travaillée' : 'Durée'}
+              value={record.ended_at ? formatWorkedDuration(record, pauses) : '—'}
             />
+
+            {/* Timeline des plages de travail/pause */}
+            {hasTimeline && (
+              <DetailRow
+                label="Plages"
+                value={
+                  <div className="flex flex-col gap-1.5">
+                    {timeline.map((seg, i) => (
+                      <div key={i} className={`flex items-center gap-2 text-xs ${seg.type === 'pause' ? 'text-gray-400' : 'text-gray-700'}`}>
+                        <span>{seg.type === 'pause' ? '⏸' : '▶'}</span>
+                        <span>
+                          {formatDateTime(seg.start)}
+                          {' → '}
+                          {seg.end
+                            ? formatDateTime(seg.end)
+                            : seg.type === 'pause'
+                              ? <Badge color="purple">En pause</Badge>
+                              : <Badge color="yellow">En cours</Badge>
+                          }
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                }
+              />
+            )}
+
             <DetailRow label="Tracteur" value={record.tractor?.name} />
             <DetailRow
               label="Outils"
@@ -141,6 +262,15 @@ export default function RecordDetail() {
           </div>
         )}
       </div>
+      <ConfirmModal
+        open={!!confirm}
+        onClose={() => setConfirm(null)}
+        onConfirm={async () => { await confirm.onConfirm(); setConfirm(null) }}
+        title={confirm?.title}
+        message={confirm?.message}
+        confirmLabel={confirm?.label}
+        loading={deleting || pausing}
+      />
     </AppLayout>
   )
 }
@@ -149,7 +279,7 @@ function DetailRow({ label, value }) {
   return (
     <div className="flex gap-4 px-5 py-3">
       <span className="text-sm font-medium text-gray-500 w-32 shrink-0">{label}</span>
-      <span className="text-sm text-gray-900">{value ?? '—'}</span>
+      <div className="text-sm text-gray-900">{value ?? '—'}</div>
     </div>
   )
 }
